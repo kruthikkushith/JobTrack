@@ -1,10 +1,24 @@
-
 import { useState, useEffect } from 'react'
 import './App.css'
 
-const API_URL = 'http://localhost:5000/api/applications'
+const API_BASE = 'http://localhost:5000/api'
 
 function App() {
+  const [token, setToken] = useState(() => localStorage.getItem('jobtrack_token') || '')
+  const [user, setUser] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('jobtrack_user') || 'null')
+    } catch {
+      return null
+    }
+  })
+
+  const [authMode, setAuthMode] = useState('login')
+  const [authName, setAuthName] = useState('')
+  const [authEmail, setAuthEmail] = useState('')
+  const [authPassword, setAuthPassword] = useState('')
+  const [authLoading, setAuthLoading] = useState(false)
+
   const [company, setCompany] = useState('')
   const [role, setRole] = useState('')
   const [status, setStatus] = useState('Applied')
@@ -13,28 +27,120 @@ function App() {
   const [editId, setEditId] = useState(null)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('All')
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
+  function logout() {
+    localStorage.removeItem('jobtrack_token')
+    localStorage.removeItem('jobtrack_user')
+    setToken('')
+    setUser(null)
+    setApplications([])
+    setError('')
+    resetForm()
+  }
+
+  // Send the login or registration request
+  async function handleAuthSubmit(event) {
+    event.preventDefault()
+    setError('')
+    setAuthLoading(true)
+
+    const endpoint = authMode === 'register' ? 'register' : 'login'
+
+    const body =
+      authMode === 'register'
+        ? { name: authName.trim(), email: authEmail.trim(), password: authPassword }
+        : { email: authEmail.trim(), password: authPassword }
+
+    try {
+      const response = await fetch(`${API_BASE}/auth/${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+
+      const result = await response.json()
+
+      if (!response.ok) {
+        throw new Error(result.message || 'Authentication failed.')
+      }
+
+      // Registration creates the account. Log in separately afterwards.
+      if (authMode === 'register') {
+        setAuthMode('login')
+        setAuthPassword('')
+        setError('')
+        alert('Account created successfully! Please log in.')
+        return
+      }
+
+      localStorage.setItem('jobtrack_token', result.token)
+      localStorage.setItem('jobtrack_user', JSON.stringify(result.user))
+
+      setToken(result.token)
+      setUser(result.user)
+      setAuthPassword('')
+      setError('')
+    } catch (err) {
+      setError(err.message || 'Could not connect to the backend.')
+    } finally {
+      setAuthLoading(false)
+    }
+  }
+
+  // Load applications whenever the authenticated user/token changes
+ 
+  // Load applications whenever the authenticated user/token changes
   useEffect(() => {
+    let cancelled = false
+
     async function fetchApplications() {
+      if (!token) {
+        setApplications([])
+        setLoading(false)
+        return
+      }
+
+      setLoading(true)
+      setError('')
+
       try {
-        const response = await fetch(API_URL)
+        const response = await fetch(`${API_BASE}/applications`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+
+        const result = await response.json()
 
         if (!response.ok) {
-          throw new Error('Failed to load applications.')
+          if (response.status === 401) {
+            throw new Error('Your session expired. Please log in again.')
+          }
+
+          throw new Error(result.message || 'Failed to load applications.')
         }
 
-        setApplications(await response.json())
-      } catch {
-        setError('Could not connect to the backend. Make sure the server is running.')
+        if (!cancelled) {
+          setApplications(result)
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(err.message || 'Could not connect to the backend.')
+        }
       } finally {
-        setLoading(false)
+        if (!cancelled) {
+          setLoading(false)
+        }
       }
     }
 
     fetchApplications()
-  }, [])
+
+    return () => {
+      cancelled = true
+    }
+  }, [token])
+
 
   async function handleSubmit(event) {
     event.preventDefault()
@@ -50,26 +156,35 @@ function App() {
     try {
       const isEditing = editId !== null
       const response = await fetch(
-        isEditing ? `${API_URL}/${editId}` : API_URL,
+        isEditing
+          ? `${API_BASE}/applications/${editId}`
+          : `${API_BASE}/applications`,
         {
           method: isEditing ? 'PUT' : 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
           body: JSON.stringify(applicationData),
         }
       )
 
-      const savedApplication = await response.json()
+      const result = await response.json()
 
       if (!response.ok) {
-        throw new Error(savedApplication.message || 'Failed to save application.')
+        if (response.status === 401) {
+          logout()
+          throw new Error('Your session expired. Please log in again.')
+        }
+        throw new Error(result.message || 'Failed to save application.')
       }
 
       if (isEditing) {
         setApplications((current) =>
-          current.map((item) => item.id === editId ? savedApplication : item)
+          current.map((item) => item.id === editId ? result : item)
         )
       } else {
-        setApplications((current) => [savedApplication, ...current])
+        setApplications((current) => [result, ...current])
       }
 
       resetForm()
@@ -94,16 +209,26 @@ function App() {
     setError('')
 
     try {
-      const response = await fetch(`${API_URL}/${id}`, { method: 'DELETE' })
+      const response = await fetch(`${API_BASE}/applications/${id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+
       const result = await response.json()
 
       if (!response.ok) {
+        if (response.status === 401) {
+          logout()
+          throw new Error('Your session expired. Please log in again.')
+        }
         throw new Error(result.message || 'Failed to delete application.')
       }
 
       setApplications((current) => current.filter((item) => item.id !== id))
 
-      if (editId === id) resetForm()
+      if (editId === id) {
+        resetForm()
+      }
     } catch (err) {
       setError(err.message || 'Could not delete the application.')
     }
@@ -120,9 +245,10 @@ function App() {
   }
 
   const filteredApplications = applications.filter((application) => {
+    const query = search.toLowerCase()
     const matchesSearch =
-      application.company.toLowerCase().includes(search.toLowerCase()) ||
-      application.role.toLowerCase().includes(search.toLowerCase())
+      application.company.toLowerCase().includes(query) ||
+      application.role.toLowerCase().includes(query)
 
     const matchesStatus =
       statusFilter === 'All' || application.status === statusFilter
@@ -130,18 +256,118 @@ function App() {
     return matchesSearch && matchesStatus
   })
 
-  const totalApplications = applications.length
-  const totalInterviews = applications.filter((item) => item.status === 'Interview').length
-  const totalOffers = applications.filter((item) => item.status === 'Offer').length
-  const totalRejected = applications.filter((item) => item.status === 'Rejected').length
-
   const stats = [
-    { label: 'Total Applications', value: totalApplications, icon: '▤', color: 'purple' },
-    { label: 'Interviews', value: totalInterviews, icon: '◷', color: 'blue' },
-    { label: 'Offers', value: totalOffers, icon: '✓', color: 'green' },
-    { label: 'Rejected', value: totalRejected, icon: '↘', color: 'orange' },
+    { label: 'Total Applications', value: applications.length, color: 'purple' },
+    {
+      label: 'Interviews',
+      value: applications.filter((item) => item.status === 'Interview').length,
+      color: 'blue',
+    },
+    {
+      label: 'Offers',
+      value: applications.filter((item) => item.status === 'Offer').length,
+      color: 'green',
+    },
+    {
+      label: 'Rejected',
+      value: applications.filter((item) => item.status === 'Rejected').length,
+      color: 'orange',
+    },
   ]
 
+  // Show login/register screen when there is no token
+  if (!token) {
+    return (
+      <div className="auth-page">
+        <div className="auth-card">
+          <div className="auth-brand">
+            <span className="brand-icon">J</span>
+            <span>JobTrack<span className="brand-dot">.</span></span>
+          </div>
+
+          <h1>{authMode === 'register' ? 'Create your account' : 'Welcome back'}</h1>
+          <p className="auth-subtitle">
+            {authMode === 'register'
+              ? 'Create an account to start tracking your job search.'
+              : 'Log in to manage your job applications.'}
+          </p>
+
+          {error && <div className="error-message" role="alert">{error}</div>}
+
+          <form className="auth-form" onSubmit={handleAuthSubmit}>
+            {authMode === 'register' && (
+              <div className="form-field">
+                <label htmlFor="auth-name">Full name</label>
+                <input
+                  id="auth-name"
+                  type="text"
+                  placeholder="Enter your name"
+                  value={authName}
+                  onChange={(event) => setAuthName(event.target.value)}
+                  maxLength={60}
+                  autoComplete="name"
+                  required
+                />
+              </div>
+            )}
+
+            <div className="form-field">
+              <label htmlFor="auth-email">Email address</label>
+              <input
+                id="auth-email"
+                type="email"
+                placeholder="you@example.com"
+                value={authEmail}
+                onChange={(event) => setAuthEmail(event.target.value)}
+                autoComplete="email"
+                required
+              />
+            </div>
+
+            <div className="form-field">
+              <label htmlFor="auth-password">Password</label>
+              <input
+                id="auth-password"
+                type="password"
+                placeholder="At least 8 characters"
+                value={authPassword}
+                onChange={(event) => setAuthPassword(event.target.value)}
+                minLength={authMode === 'register' ? 8 : 1}
+                autoComplete={authMode === 'register' ? 'new-password' : 'current-password'}
+                required
+              />
+            </div>
+
+            <button className="primary-button auth-submit" type="submit" disabled={authLoading}>
+              {authLoading
+                ? 'Please wait...'
+                : authMode === 'register'
+                  ? 'Create account'
+                  : 'Log in'}
+            </button>
+          </form>
+
+          <p className="auth-switch">
+            {authMode === 'register'
+              ? 'Already have an account? '
+              : "Don't have an account? "}
+            <button
+              className="text-button"
+              type="button"
+              onClick={() => {
+                setAuthMode(authMode === 'register' ? 'login' : 'register')
+                setError('')
+              }}
+            >
+              {authMode === 'register' ? 'Log in' : 'Sign up'}
+            </button>
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  // Main dashboard, visible after login
   return (
     <div className="jobtrack">
       <header className="topbar">
@@ -152,23 +378,19 @@ function App() {
 
         <div className="topbar-right">
           <span className="online-dot" />
-          <span>Personal Workspace</span>
-          <div className="avatar">JT</div>
+          <span>{user?.name || user?.email || 'Personal Workspace'}</span>
+          <button className="secondary-button logout-button" type="button" onClick={logout}>
+            Log out
+          </button>
         </div>
       </header>
 
       <div className="app-layout">
         <aside className="sidebar">
           <p className="sidebar-label">WORKSPACE</p>
-          <a className="side-link active" href="#dashboard">
-            <span>▦</span> Dashboard
-          </a>
-          <a className="side-link" href="#application-form">
-            <span>＋</span> Add Application
-          </a>
-          <a className="side-link" href="#applications-list">
-            <span>▤</span> My Applications
-          </a>
+          <a className="side-link active" href="#dashboard">Dashboard</a>
+          <a className="side-link" href="#application-form">Add Application</a>
+          <a className="side-link" href="#applications-list">My Applications</a>
 
           <div className="sidebar-bottom">
             <div className="tip-icon">✦</div>
@@ -196,7 +418,7 @@ function App() {
               <div className="stats-card" key={stat.label}>
                 <div className="stat-top">
                   <span className="stat-label">{stat.label}</span>
-                  <span className={`stat-icon ${stat.color}`}>{stat.icon}</span>
+                  <span className={`stat-icon ${stat.color}`}>●</span>
                 </div>
                 <p className="stat-number">{stat.value}</p>
                 <p className="stat-caption">Applications tracked</p>
@@ -279,7 +501,6 @@ function App() {
 
             <div className="list-toolbar">
               <div className="search-box">
-                <span>⌕</span>
                 <input
                   aria-label="Search applications"
                   type="search"
@@ -305,13 +526,11 @@ function App() {
 
             {loading ? (
               <div className="empty-state">
-                <div className="empty-icon">◌</div>
                 <h3>Loading applications...</h3>
                 <p>Please wait while your saved applications load.</p>
               </div>
             ) : filteredApplications.length === 0 ? (
               <div className="empty-state">
-                <div className="empty-icon">▤</div>
                 <h3>{applications.length === 0 ? 'Your journey starts here' : 'No matching applications'}</h3>
                 <p>
                   {applications.length === 0

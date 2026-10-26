@@ -1,34 +1,59 @@
 
+require('dotenv').config()
+
 const express = require('express')
 const cors = require('cors')
 const mongoose = require('mongoose')
 
+const authRoutes = require('./routes/auth')
+const authMiddleware = require('./middleware/authMiddleware')
+
 const app = express()
-const PORT = 5000
-const MONGO_URI = 'mongodb://127.0.0.1:27017/jobtrack'
+const PORT = process.env.PORT || 5000
+const MONGO_URI = process.env.MONGO_URI
 
 app.use(cors())
 app.use(express.json())
 
-// Define the structure of a job application
+// Authentication APIs: register and login
+app.use('/api/auth', authRoutes)
+
+// Job application schema
 const applicationSchema = new mongoose.Schema(
   {
-    company: { type: String, required: true, trim: true },
-    role: { type: String, required: true, trim: true },
+    user: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      required: true,
+      index: true,
+    },
+    company: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    role: {
+      type: String,
+      required: true,
+      trim: true,
+    },
     status: {
       type: String,
       required: true,
       enum: ['Applied', 'Interview', 'Rejected', 'Offer'],
       default: 'Applied',
     },
-    date: { type: String, default: '' },
+    date: {
+      type: String,
+      default: '',
+    },
   },
   { timestamps: true }
 )
 
 const Application = mongoose.model('Application', applicationSchema)
 
-// Keep the response format compatible with your React frontend
+// Format the response for the frontend
 function formatApplication(application) {
   return {
     id: application._id.toString(),
@@ -39,24 +64,29 @@ function formatApplication(application) {
   }
 }
 
-// Test route
+// Backend test route
 app.get('/', (req, res) => {
   res.send('JobTrack backend is running successfully!')
 })
 
-// GET: Retrieve all applications
-app.get('/api/applications', async (req, res) => {
+// All application routes below this point require a valid JWT.
+
+// GET: Retrieve only the logged-in user's applications
+app.get('/api/applications', authMiddleware, async (req, res) => {
   try {
-    const applications = await Application.find().sort({ createdAt: -1 })
+    const applications = await Application.find({
+      user: req.user.userId,
+    }).sort({ createdAt: -1 })
+
     res.json(applications.map(formatApplication))
   } catch (error) {
-    console.error(error)
+    console.error('Load applications error:', error)
     res.status(500).json({ message: 'Failed to load applications.' })
   }
 })
 
-// POST: Add an application
-app.post('/api/applications', async (req, res) => {
+// POST: Create an application for the logged-in user
+app.post('/api/applications', authMiddleware, async (req, res) => {
   try {
     const { company, role, status, date } = req.body
 
@@ -73,21 +103,22 @@ app.post('/api/applications', async (req, res) => {
     }
 
     const application = await Application.create({
+      user: req.user.userId,
       company: company.trim(),
       role: role.trim(),
       status,
-      date: date || '',
+      date: typeof date === 'string' ? date : '',
     })
 
     res.status(201).json(formatApplication(application))
   } catch (error) {
-    console.error(error)
+    console.error('Create application error:', error)
     res.status(500).json({ message: 'Failed to save application.' })
   }
 })
 
-// PUT: Update an application
-app.put('/api/applications/:id', async (req, res) => {
+// PUT: Update only an application owned by the logged-in user
+app.put('/api/applications/:id', authMiddleware, async (req, res) => {
   try {
     if (!mongoose.isValidObjectId(req.params.id)) {
       return res.status(400).json({ message: 'Invalid application ID.' })
@@ -96,39 +127,72 @@ app.put('/api/applications/:id', async (req, res) => {
     const { company, role, status, date } = req.body
     const updates = {}
 
-    if (company !== undefined) updates.company = company
-    if (role !== undefined) updates.role = role
-    if (status !== undefined) updates.status = status
-    if (date !== undefined) updates.date = date
+    if (company !== undefined) {
+      if (typeof company !== 'string' || !company.trim()) {
+        return res.status(400).json({ message: 'Company cannot be empty.' })
+      }
+      updates.company = company.trim()
+    }
 
-    const application = await Application.findByIdAndUpdate(
-      req.params.id,
+    if (role !== undefined) {
+      if (typeof role !== 'string' || !role.trim()) {
+        return res.status(400).json({ message: 'Role cannot be empty.' })
+      }
+      updates.role = role.trim()
+    }
+
+    if (status !== undefined) {
+      if (!['Applied', 'Interview', 'Rejected', 'Offer'].includes(status)) {
+        return res.status(400).json({ message: 'Invalid application status.' })
+      }
+      updates.status = status
+    }
+
+    if (date !== undefined) {
+      if (typeof date !== 'string') {
+        return res.status(400).json({ message: 'Invalid application date.' })
+      }
+      updates.date = date
+    }
+
+    const application = await Application.findOneAndUpdate(
+      {
+        _id: req.params.id,
+        user: req.user.userId,
+      },
       updates,
       { new: true, runValidators: true }
     )
 
     if (!application) {
-      return res.status(404).json({ message: 'Application not found.' })
+      return res.status(404).json({
+        message: 'Application not found for this account.',
+      })
     }
 
     res.json(formatApplication(application))
   } catch (error) {
-    console.error(error)
-    res.status(400).json({ message: 'Failed to update application.' })
+    console.error('Update application error:', error)
+    res.status(500).json({ message: 'Failed to update application.' })
   }
 })
 
-// DELETE: Remove an application
-app.delete('/api/applications/:id', async (req, res) => {
+// DELETE: Delete only an application owned by the logged-in user
+app.delete('/api/applications/:id', authMiddleware, async (req, res) => {
   try {
     if (!mongoose.isValidObjectId(req.params.id)) {
       return res.status(400).json({ message: 'Invalid application ID.' })
     }
 
-    const application = await Application.findByIdAndDelete(req.params.id)
+    const application = await Application.findOneAndDelete({
+      _id: req.params.id,
+      user: req.user.userId,
+    })
 
     if (!application) {
-      return res.status(404).json({ message: 'Application not found.' })
+      return res.status(404).json({
+        message: 'Application not found for this account.',
+      })
     }
 
     res.json({
@@ -136,14 +200,22 @@ app.delete('/api/applications/:id', async (req, res) => {
       application: formatApplication(application),
     })
   } catch (error) {
-    console.error(error)
+    console.error('Delete application error:', error)
     res.status(500).json({ message: 'Failed to delete application.' })
   }
 })
 
-// Connect to MongoDB, then start the server
+// Connect to MongoDB and start the backend
 async function startServer() {
   try {
+    if (!MONGO_URI) {
+      throw new Error('MONGO_URI is missing from server/.env')
+    }
+
+    if (!process.env.JWT_SECRET) {
+      throw new Error('JWT_SECRET is missing from server/.env')
+    }
+
     await mongoose.connect(MONGO_URI)
     console.log('Connected to MongoDB successfully!')
 
@@ -151,7 +223,7 @@ async function startServer() {
       console.log(`JobTrack server is running on port ${PORT}`)
     })
   } catch (error) {
-    console.error('MongoDB connection failed:', error.message)
+    console.error('Server startup failed:', error.message)
     process.exit(1)
   }
 }
