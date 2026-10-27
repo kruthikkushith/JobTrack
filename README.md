@@ -1,136 +1,193 @@
-# JobTrack
+# JobTrack — Job Application Tracker
 
-JobTrack is a personal job-application tracker. The React dashboard lets you create, review, search, filter, edit, and delete applications. An Express API stores the records in MongoDB.
+JobTrack is a full-stack web application that helps users organize and manage their job search. Users can create an account, log in securely, and track job applications through a dashboard.
 
-## Current Status
+## Live Demo
 
-- The client production build and ESLint check pass.
-- The backend connects to the configured local MongoDB database and listens on port `5000`.
-- There is no login, user account, or JWT authentication. The current API and database are shared by anyone who can reach this local app.
-- The app tracks company, role, status, and an optional application date. It does not currently track interviews as separate records, profiles, or notifications.
+- **Frontend:** [Open JobTrack](YOUR_RENDER_FRONTEND_URL)
+- **Backend API:** https://jobtrack-api-fck9.onrender.com
 
-## Requirements
+> Replace `YOUR_RENDER_FRONTEND_URL` with your actual deployed frontend URL.
 
-- Node.js and npm
-- MongoDB running locally on `127.0.0.1:27017`
+## Features
 
-The backend uses the database named `jobtrack` and creates its collection when the first application is saved. Its MongoDB connection string is currently defined directly in `server/server.js`; there is no environment-variable configuration yet.
+- **User Authentication:** Register and log in using email and password.
+- **JWT Authentication:** Protect API endpoints using JSON Web Tokens.
+- **Password Security:** Hash passwords before storing them in the database.
+- **Application Management:** Create, view, edit, and delete job applications.
+- **Search and Filtering:** Search applications and filter them by status.
+- **Dashboard:** View application summaries and track progress.
+- **Database Persistence:** Store user accounts and application records in MongoDB Atlas.
+- **Responsive Interface:** Access the application through a web browser.
+
+## Technology Stack
+
+| Area | Technologies |
+|---|---|
+| Frontend | React, JavaScript, Vite |
+| Backend | Node.js, Express.js |
+| Database | MongoDB Atlas, Mongoose |
+| Authentication | JWT, bcryptjs |
+| API | REST API, JSON |
+| Deployment | Render |
+| Version Control | Git, GitHub |
+
+## Architecture
+
+The application uses a client-server architecture.
+
+1. **React frontend:** Displays the dashboard and sends HTTP requests to the backend.
+2. **Express backend:** Handles authentication, validates requests, and processes application operations.
+3. **JWT authentication:** Verifies the identity of authenticated users.
+4. **MongoDB Atlas:** Persists user and job application data through Mongoose models.
+5. **Render:** Hosts the frontend and backend services.
+
+## Application Statuses
+
+Each job application can have one of the following statuses:
+
+- Applied
+- Interview
+- Rejected
+- Offer
+
+Application records include company name, job role, status, and an optional application date.
+
+## API Overview
+
+**Base URL:** `https://jobtrack-api-fck9.onrender.com`
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| GET | `/` | Check backend availability |
+| POST | `/api/auth/register` | Register a new account |
+| POST | `/api/auth/login` | Authenticate a user |
+| GET | `/api/applications` | Retrieve the authenticated user's applications |
+| POST | `/api/applications` | Create a job application |
+| PUT | `/api/applications/:id` | Update a job application |
+| DELETE | `/api/applications/:id` | Delete a job application |
+
+Application endpoints require valid authentication. Users should only be able to access their own application records.
 
 ## Run Locally
 
-Open three terminals from the repository root. Start MongoDB first (for example, start the MongoDB service installed on your machine), then run:
+### Prerequisites
 
-**Terminal 1: API server**
+- Node.js and npm
+- Git
+- A MongoDB Atlas database or local MongoDB installation
 
-```powershell
-cd server
-npm install
-node server.js
+### 1. Clone the repository
+
+```bash
+git clone https://github.com/kruthikkushith/JobTrack.git
+cd JobTrack
 ```
 
-The server prints a MongoDB connection message and listens at `http://localhost:5000`. Keep this terminal running. The server package does not currently define a `start` script.
+### 2. Configure the backend
 
-**Terminal 2: React client**
+```bash
+cd server
+npm install
+```
 
-```powershell
+Create a `.env` file inside the `server` directory:
+
+```env
+PORT=5000
+MONGO_URI=your_mongodb_connection_string
+JWT_SECRET=your_private_random_secret
+```
+
+Replace the example values with your own MongoDB connection string and a strong, private JWT secret. Never commit `.env` to GitHub.
+
+### 3. Start the backend
+
+```bash
+npm run dev
+```
+
+The backend runs locally at `http://localhost:5000`.
+
+### 4. Configure and start the frontend
+
+Open a second terminal:
+
+```bash
 cd client
 npm install
 npm run dev
 ```
 
-Open the Vite URL printed in the terminal, normally `http://localhost:5173`. Keep the client terminal running. The client sends API requests to `http://localhost:5000/api/applications`.
+Open the local Vite URL printed in the terminal, usually `http://localhost:5173`.
 
-**Terminal 3: optional client checks**
+For local development, configure the frontend API base URL to point to `http://localhost:5000/api`. For production, use the deployed backend URL.
 
-```powershell
-cd client
+### 5. Build and lint the frontend
+
+From the `client` directory:
+
+```bash
 npm run build
 npm run lint
 ```
 
-The production build is written to `client/dist/`. `npm run preview` serves that build locally after running `npm run build`; it does not start the API or MongoDB.
+The production build is generated in `client/dist/`.
 
-To confirm the API is reachable, open `http://localhost:5000/`; it returns `JobTrack backend is running successfully!`. If the server exits with a MongoDB connection error, check that the MongoDB service is running at the configured address.
+## Environment Variables
 
-## How It Works
+| Variable | Purpose |
+|---|---|
+| `PORT` | Backend server port |
+| `MONGO_URI` | MongoDB connection string |
+| `JWT_SECRET` | Secret used to sign and verify JWTs |
 
-1. `client/src/main.jsx` mounts the React application, and `client/src/App.jsx` fetches application records when the dashboard loads.
-2. The dashboard sends create, update, and delete requests to the Express API. Search, status filtering, and summary counts are calculated in the browser from the loaded records.
-3. `server/server.js` validates requests, reads and writes MongoDB documents through Mongoose, and returns JSON records with an `id` field.
-4. MongoDB persists application data across client reloads. All requests currently use the same local database; there is no per-user data separation.
+Keep environment variables and database credentials private. Configure production values in the backend service's environment settings on Render.
 
-Application statuses are `Applied`, `Interview`, `Rejected`, and `Offer`. Company and role are required. Application date is optional. New records appear first.
+## Deployment
 
-## API Reference
+The application is deployed using Render:
 
-Base URL: `http://localhost:5000`
+- **Frontend:** Render Static Site
+- **Backend:** Render Web Service
+- **Database:** MongoDB Atlas
 
-| Method | Path | Behavior |
-| --- | --- | --- |
-| `GET` | `/` | Backend health message. |
-| `GET` | `/api/applications` | List all applications, newest first. |
-| `POST` | `/api/applications` | Create an application. |
-| `PUT` | `/api/applications/:id` | Update provided fields on an existing application. |
-| `DELETE` | `/api/applications/:id` | Delete an application. |
+The frontend communicates with the deployed backend using its production API URL. The backend connects to MongoDB Atlas using the configured environment variables.
 
-Create requests use JSON with `company`, `role`, and `status`; `date` is optional:
+## Repository Structure
 
-```json
-{
-	"company": "Example Company",
-	"role": "Software Developer",
-	"status": "Applied",
-	"date": "2026-10-22"
-}
+```text
+JobTrack/
+├── client/
+│   ├── public/
+│   ├── src/
+│   │   ├── components/
+│   │   ├── App.jsx
+│   │   ├── App.css
+│   │   └── index.css
+│   ├── package.json
+│   └── vite.config.js
+├── server/
+│   ├── middleware/
+│   ├── models/
+│   ├── routes/
+│   ├── server.js
+│   ├── package.json
+│   └── .env
+├── .gitignore
+└── README.md
 ```
 
-Successful application responses contain `id`, `company`, `role`, `status`, and `date`. Invalid create data or IDs return a client error; missing records return `404`; server/database failures return an error response. The API enables CORS for cross-origin requests and currently has no authentication or authorization middleware.
+## Future Improvements
 
-## Repository Files
+- Interview scheduling and interview-round management
+- Follow-up reminders and notifications
+- Resume upload and management
+- Job recommendations and matching
+- Automated backend and frontend tests
 
-### Root
+## Author
 
-| File | Purpose and current status |
-| --- | --- |
-| `README.md` | This setup guide, API reference, and file map. |
-| `.gitignore` | Excludes dependency folders, build output, local environment files, logs, and editor/OS files from Git. |
+**Kruthik A.**
 
-### Client
-
-| File | Purpose and current status |
-| --- | --- |
-| `client/package.json` | Client dependencies and Vite, build, lint, and preview scripts. |
-| `client/package-lock.json` | Locks exact npm dependency resolutions for repeatable client installs. |
-| `client/.gitignore` | Ignores client-specific dependencies, generated output, local files, and editor files. |
-| `client/README.md` | Unmodified Vite starter documentation; this root README is the JobTrack-specific guide. |
-| `client/index.html` | Vite HTML entry point; provides the root element and loads `src/main.jsx`. Its current browser title is `client`. |
-| `client/vite.config.js` | Configures Vite with the React plugin. |
-| `client/eslint.config.js` | Configures ESLint rules for JavaScript, React Hooks, and Vite React refresh; ignores `dist`. |
-| `client/src/main.jsx` | Mounts `<App />` under React Strict Mode and imports the global stylesheet. |
-| `client/src/App.jsx` | Active dashboard and application state: fetches records, submits create/update requests, deletes records, filters/searches, and computes summary counts. Uses the fixed API URL `http://localhost:5000/api/applications`. |
-| `client/src/index.css` | Main dashboard, form, list, responsive layout, and visual styles. |
-| `client/src/App.css` | Additional stylesheet imported by `App.jsx`; includes generic and overlapping layout/control styles from an earlier UI. |
-| `client/src/components/Navbar.jsx` | Small standalone navbar component; not imported by the active `App.jsx` dashboard. |
-| `client/src/components/Sidebar.jsx` | Standalone starter sidebar; not imported by the active dashboard, which renders its own sidebar. |
-| `client/src/components/StatsCard.jsx` | Standalone statistics card; not imported by the active dashboard, which renders cards inline. |
-| `client/public/favicon.svg` | Favicon referenced by `index.html`. |
-| `client/public/icons.svg` | SVG symbol collection; not referenced by the active client code. |
-| `client/src/assets/hero.png` | Image asset; not referenced by the active client code. |
-| `client/src/assets/react.svg` | React starter asset; not referenced by the active client code. |
-| `client/src/assets/vite.svg` | Vite starter asset; not referenced by the active client code. |
-
-### Server
-
-| File | Purpose and current status |
-| --- | --- |
-| `server/package.json` | Express, CORS, and Mongoose dependencies. It has no start or working test script; start the server with `node server.js`. |
-| `server/package-lock.json` | Locks exact npm dependency resolutions for repeatable server installs. |
-| `server/server.js` | Express API, Mongoose application schema/model, request validation, CRUD routes, MongoDB connection, and server startup. Uses port `5000` and `mongodb://127.0.0.1:27017/jobtrack`. |
-
-`node_modules/` folders and `client/dist/` are generated dependency/build output, not application source files. They are recreated by npm install/build and are ignored by Git.
-
-## Technology
-
-- React 19 and Vite 8 for the client
-- Node.js, Express 5, and Mongoose 9 for the API and MongoDB access
-- MongoDB for persistent application records
+Full-Stack Development Project | React, Node.js, Express.js, MongoDB, JWT
