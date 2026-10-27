@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import './App.css'
 
-const API_BASE = 'http://localhost:5000/api'
+const API_BASE = 'https://jobtrack-api-fck9.onrender.com'
 
 function App() {
   const [token, setToken] = useState(() => localStorage.getItem('jobtrack_token') || '')
