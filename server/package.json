@@ -1,4 +1,3 @@
-
 {
   "name": "server",
   "version": "1.0.0",
@@ -11,5 +10,8 @@
   },
   "keywords": [],
   "author": "",
-  "license": "ISC"
+  "license": "ISC",
+  "dependencies": {
+    "dotenv": "^18.0.9"
+  }
 }
